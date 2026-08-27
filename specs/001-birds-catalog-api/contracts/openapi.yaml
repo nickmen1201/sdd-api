@@ -15,10 +15,8 @@ openapi: 3.1.0
 # inconsistency (GET /api/ave/{ave_id} vs DELETE /api/aves/{ave_id}) and its
 # body-carried ids on PUT. This is deliberate — see research.md R-011.
 #
-# Operation count: 17 (5 birds, 6 families, 6 ecosystems).
-# Note that spec.md SC-002 says 16; that is an arithmetic slip in the spec's
-# prose, flagged in plan.md for upstream correction. The spec's Gherkin covers
-# all 17.
+# Operation count: 17 (5 birds, 6 families, 6 ecosystems), matching spec.md
+# SC-002 and the spec's Gherkin.
 # ---------------------------------------------------------------------------
 
 info:

@@ -59,20 +59,11 @@ refused, never cascaded (FR-018).
 
 *GATE: Must pass before Phase 0 research. Re-checked after Phase 1 design.*
 
-Source: `constitution.md` at repository root (v1.0.0, 2026-07-24).
-
-> **Repo hygiene issue — non-blocking.** `.specify/memory/constitution.md` is still the
-> unfilled Spec-Kit placeholder. The real constitution lives at the repository root, and
-> that is the file this gate was evaluated against. The two should be reconciled so that
-> tooling and humans read the same document.
->
-> **Profile assumption.** `ACTIVE PROFILES` has no box checked. This is a REST API, so the
-> **SWE** profile is assumed active and its rules are enforced below. Data Eng and DS/ML
-> are treated as inactive.
+Source: `.specify/memory/constitution.md` (v1.0.0, 2026-07-24).
 
 | Rule | Gate | Verdict |
 |---|---|---|
-| Intent flows downhill (spec → plan → contract → tasks → code) | Contract authored in this phase, from the spec; no behavior introduced here that the spec does not carry | **PASS** — one spec discrepancy raised for upstream correction rather than patched downstream (below) |
+| Intent flows downhill (spec → plan → contract → tasks → code) | Contract authored in this phase, from the spec; no behavior introduced here that the spec does not carry. One arithmetic slip found in SC-002 was corrected upstream in the spec, not absorbed downstream | **PASS** |
 | Reproducible from a clean checkout | `docker compose up`, pinned `postgres:17` and SDK images, `packages.lock.json` committed, `global.json` pinning the SDK band | **PASS** |
 | Artifacts live in the repo; one logical change = one commit | Spec, contract, plan and code move together; Conventional Commits | **PASS** |
 | Secrets never in the repo | Connection string from environment; Compose supplies a local-only dev password; no credential committed | **PASS** |
@@ -107,18 +98,6 @@ phase tightened three entries rather than loosening any:
 One design decision was corrected during this phase: an initial draft served `PUT /api/aves`
 *and* `PUT /api/ave`, which contradicted R-011's decision to reproduce the brief's inventory
 without aliases and would have made the count 18. The alias was removed.
-
-### Spec discrepancy raised upstream (not patched here)
-
-**SC-002 undercounts the operation inventory.** It reads "All 16 operations from the brief
-(5 birds, 6 families, 5 ecosystems)". The brief lists **six** ecosystem operations — list,
-get-by-id, birds-by-id, add, update, delete — so the true total is **17**. The spec's own
-Gherkin already covers all six (FR-005, FR-007, FR-012), so this is an arithmetic slip in
-the prose enumeration, not a scope gap.
-
-The contract implements all 17. Per the constitution's *intent flows downhill*, the fix
-belongs in the spec: SC-002 should read "All 17 operations (5 birds, 6 families,
-6 ecosystems)". Flagged here rather than silently absorbed.
 
 ### Spec open questions, as resolved for this plan
 

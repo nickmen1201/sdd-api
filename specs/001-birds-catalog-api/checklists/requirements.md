@@ -35,9 +35,10 @@
   uniqueness, and referential-integrity-on-delete. Per the project constitution
   ("Unspecified behavior → STOP and ask, NEVER invent") these are marked rather than
   defaulted. Answer them via `/speckit-clarify` or directly, then re-run this checklist.
-- Two further gaps are recorded in the spec's **Open Questions** section (access control;
-  full vs partial record correction). Neither blocks planning, but both should be settled
-  before implementation.
+- Three further gaps are recorded in the spec's **Open Questions** section (access control;
+  full vs partial record correction; uniqueness case sensitivity). None blocks planning; all
+  three are answered provisionally in plan.md, *Spec open questions, as resolved for this
+  plan*, and should be confirmed before implementation.
 - The brief's implementation mandates (identifier data type, layered architecture,
   repository pattern, exact operation signatures) were intentionally excluded from the spec
   and must be carried into `/speckit-plan`.

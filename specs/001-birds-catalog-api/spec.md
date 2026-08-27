@@ -302,7 +302,7 @@ Feature: Data integrity
 ## Success Criteria
 
 - **SC-001**: A consumer obtains a bird's complete classification — names, family with its order, ecosystem with its zone — from this catalog alone.
-- **SC-002**: All 16 operations from the brief (5 birds, 6 families, 5 ecosystems, incl. the two cross-entity listings) are exercised successfully end to end.
+- **SC-002**: All 17 operations from the brief (5 birds, 6 families, 6 ecosystems, incl. the two cross-entity listings) are exercised successfully end to end.
 - **SC-003** (`@FR-020`): A demonstration dataset of ≥5 birds — with ≥1 family and ≥1 ecosystem shared by more than one bird, so `@P4` is meaningfully exercised — is registered through the catalog itself, and every bird is afterwards retrievable individually and in the list.
 - **SC-004**: The `@P4` listings return exactly the expected subset of that dataset — 100% precision and recall against the seeded data.
 - **SC-005**: 100% of birds resolve to an existing family and an existing ecosystem.

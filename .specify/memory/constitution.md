@@ -1,50 +1,76 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!-- constitution v1.0.0 · 2026-07-24 · template -->
 
-## Core Principles
+# Engineering Constitution
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+Rules of *how* we build. The spec governs *what*. When code violates this file, the
+code is wrong; when this file and the spec conflict, stop and ask the user.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+**Keywords:** MUST/NEVER = blocks merge. DEFAULT/PREFER = the choice absent a documented
+reason (override with one sentence in the spec or an ADR).
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+This file contains only what the agent would otherwise get wrong or choose differently —
+not general good practice it already applies. Keep it that way.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+`ACTIVE PROFILES: [X] SWE   [ ] Data Eng   [ ] DS/ML`
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+---
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Core (always)
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- **Intent flows downhill:** spec → plan → contract → tasks → code. A behavior change
+  enters at the spec and re-flows; NEVER patch it into code and leave the spec silent.
+  Unspecified behavior → STOP and ask, NEVER invent.
+- **Reproducible from a clean checkout** via documented commands. Lockfiles committed,
+  tool versions pinned, seeds fixed where determinism is feasible.
+- **Artifacts live in the repo.** One logical change = one commit moving spec, contract,
+  and code together. Conventional Commits (DEFAULT).
+- **Secrets** never in the repo — from env/secret manager; CI fails on a leaked credential.
+- **Data hygiene defaults** (commonly violated): timestamps UTC + tz-aware + ISO 8601;
+  surrogate IDs UUIDv7/ULID, NEVER sequential integers across a boundary; money in integer
+  minor units, NEVER float; UTF-8 throughout.
+- **Automate the checkable:** any rule a linter/type-checker/test can enforce MUST be
+  enforced there. Red CI blocks merge.
+- **New dependencies** justified in one line (why, and why not stdlib).
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Profile: SWE
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- **Contract-first.** Interfaces get a lintable contract (OpenAPI/proto/SDL/JSON Schema)
+  written and linted *before* code, and frozen. No endpoint exists in code that isn't in it.
+- Every operation declares all outcomes, errors included. HTTP errors use Problem Details /
+  RFC 7807 (DEFAULT). Contract changes classified additive vs breaking.
+- Dependencies point inward: domain MUST NOT depend on infrastructure. Map to DTOs at the
+  edge — NEVER leak persistence models onto the wire.
+- Strict static typing on public interfaces. Contract tests validate the running code
+  against the contract file.
 
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+## Profile: Data Eng
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Every dataset/interface has an explicit, versioned **data contract**; schema evolution
+  additive by DEFAULT, breaking changes versioned.
+- Transforms idempotent and replayable — re-running same inputs NEVER double-writes.
+- **raw → cleaned → curated**; raw is immutable, NEVER mutated in place.
+- Quality checks run *inside* the pipeline (counts, nulls, uniqueness, referential
+  integrity, freshness). A failed gate stops promotion downstream.
+- Lineage traceable end to end; PII classified and NEVER logged.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+## Profile: DS/ML
+
+- Version **data + code + config together**; a result you can't reproduce doesn't exist.
+- Every training run tracked (params, data version, code version, metrics). Untracked = invalid.
+- Evaluate on a held-out set vs a defined baseline. NEVER report train-set performance as
+  generalization; guard train/serve skew.
+- Notebooks explore; anything repeatable is promoted to a tested pipeline. NEVER ship a
+  notebook to production. Monitor deployed models for drift and decay.
+
+## Agent rules
+
+- Obey this file and the spec; on genuine conflict, STOP and ask.
+- Implement in task order, vertical slices; the first slice is human-reviewed before the
+  rest follow it as reference.
+- Show diffs for contract/schema changes and classify additive vs breaking before coding.
+
+## Versioning
+
+Bump the stamp on meaningful change. Keep **API version** (what changed for consumers,
+semver) distinct from **artifact version** (what changed for the team) — same edits drive
+both, but a typo fix bumps only the artifact.
