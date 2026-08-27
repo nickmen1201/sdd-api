@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — **3 remain** (FR-016, FR-017, FR-018), by explicit request: ambiguities in the source brief are marked, not guessed
-- [x] Requirements are testable and unambiguous — except the three marked above, which are unanswerable from the brief
+- [x] No [NEEDS CLARIFICATION] markers remain — all 3 (FR-016, FR-017, FR-018) resolved by the user in the 2026-08-26 clarification session
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined

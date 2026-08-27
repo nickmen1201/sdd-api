@@ -1,190 +1,324 @@
 # Feature Specification: Birds of Colombia Catalog
 
-**Feature Branch**: `main` (no feature branch created — no `before_specify` git hook configured)
+**Branch**: `main` · **Created**: 2026-08-25 · **Status**: Draft
+**Input**: `formulations_birds_api_20260820_.md`. Implementation mandates in that brief (ID type, layering, repository pattern, operation signatures) are excluded here — they bind the plan, not the spec.
 
-**Created**: 2026-08-25
+Behaviour is specified as Gherkin. Each `@FR-xxx` tag is a requirement ID and appears
+exactly once — the tagged scenario *is* that requirement. Where a rule differs per entity,
+the tag sits on the `Examples:` block it applies to. `@P1..@P4` are delivery priorities —
+each Feature is independently testable and shippable in tag order.
 
-**Status**: Draft
+## Clarifications
 
-**Input**: Source brief: `formulations_birds_api_20260820_.md` ("Birds of Colombia"). Only that document was used as input; technical/implementation mandates in it were deliberately excluded from this specification.
+### Session 2026-08-26
 
-## User Scenarios & Testing *(mandatory)*
+- Q: Which bird fields are mandatory? (FR-016) → A: Indigenous name and indigenous language are optional; scientific name, common name, family and ecosystem are all mandatory.
+- Q: What uniqueness rules apply? (FR-017) → A: A scientific name must be unique across birds; a family name unique across families; an ecosystem name unique across ecosystems. Sharing a *classification* is not a duplicate — many birds may reference the same family and the same ecosystem.
+- Q: Removing a family or ecosystem that birds still use? (FR-018) → A: Refuse the removal while dependents exist.
 
-### User Story 1 - Consult bird information from one authoritative place (Priority: P1)
+## Key Entities
 
-An enthusiast, academic, or conservation professional needs information about a Colombian
-bird. Instead of piecing it together from scattered sources, they consult the catalog: they
-can see the full list of registered birds, and for any single bird they get its scientific
-name, common name, indigenous name and the indigenous language it comes from, plus the
-taxonomic family and the ecosystem it belongs to.
+| Entity | Fields | Relations |
+|---|---|---|
+| **Bird** (Ave) | scientific name **(unique)**, common name, indigenous name *(optional)*, indigenous language *(optional)* | belongs to exactly 1 Family, exactly 1 Ecosystem — both mandatory |
+| **Family** (Familia Taxonómica) | name **(unique)** (*Cathartidae*), taxonomic order (*Cathartiformes*) | groups 0..n Birds |
+| **Ecosystem** (Ecosistema) | name **(unique)** (*Páramo*), geographic zone (*Andina*) | hosts 0..n Birds |
 
-**Why this priority**: This is the reason the catalog exists — the problem stated in the
-brief is that bird information is scattered and inconsistent. Consultation is the value
-delivered to every audience named in the brief; everything else exists to make this possible.
-
-**Independent Test**: With a pre-loaded set of bird records, a consumer can list all birds
-and retrieve a single bird by its identifier, receiving consistent, complete classification
-data in both cases. Delivers value without any curation capability being available.
-
-**Acceptance Scenarios**:
-
-1. **Given** the catalog contains registered birds, **When** a consumer requests the full list, **Then** every registered bird is returned with its descriptive names and its family and ecosystem associations.
-2. **Given** a bird is registered, **When** a consumer requests that bird by its identifier, **Then** the complete record for that bird is returned, including which taxonomic family and which ecosystem it is associated with.
-3. **Given** an identifier that matches no bird, **When** a consumer requests it, **Then** the consumer is told the bird does not exist, distinguishably from a request that failed for other reasons.
-4. **Given** the catalog contains no birds yet, **When** a consumer requests the full list, **Then** an empty result is returned rather than an error.
+All three carry a system-assigned identifier: unique, stable for the record's lifetime,
+not inferable from creation order. Fields not marked *(optional)* are mandatory.
 
 ---
 
-### User Story 2 - Curate the bird records (Priority: P2)
+## Feature: Consult the catalog
 
-A catalog maintainer keeps the bird information current: they register a newly documented
-bird together with its family and ecosystem, correct an existing record when a name or an
-association turns out to be wrong, and remove a record that should no longer be published.
+```gherkin
+@P1
+Feature: Consult the catalog
+  As an enthusiast, academic, or conservation professional
+  I want a bird's full classification from one authoritative place
+  So that I don't reassemble it from scattered, inconsistent sources
 
-**Why this priority**: Without curation the catalog is a fixed dataset that cannot be
-corrected or grown; but consultation (P1) already delivers value on a seeded dataset, so
-curation comes second.
+  Background:
+    Given the catalog is running
 
-**Independent Test**: A maintainer can register a bird, see it appear in the catalog,
-modify one of its fields, and remove it — each step observable through consultation.
+  @FR-001
+  Scenario: List every registered bird
+    Given the catalog contains registered birds
+    When a consumer requests the list of birds
+    Then every registered bird is returned, each with the full payload of FR-003
 
-**Acceptance Scenarios**:
+  @FR-002
+  Scenario: Retrieve one bird
+    Given a bird is registered
+    When a consumer requests that bird by its identifier
+    Then the complete record is returned, with the full payload of FR-003
 
-1. **Given** a taxonomic family and an ecosystem already exist, **When** a maintainer registers a bird referencing them, **Then** the bird is stored, receives its own identifier, and is retrievable afterwards.
-2. **Given** a registered bird, **When** a maintainer changes one or more of its values, **Then** subsequent consultations return the updated values and no other field is altered.
-3. **Given** a registered bird, **When** a maintainer removes it, **Then** it no longer appears in the catalog, while its family and ecosystem remain untouched.
-4. **Given** a bird submitted with a family or ecosystem that does not exist, **When** the maintainer attempts to register it, **Then** the record is rejected and the reason is stated.
+  Scenario Outline: Retrieve reference data
+    Given a <entity> is registered
+    When a consumer requests it by its identifier, and requests the full list
+    Then the stored <fields> are returned in both cases
 
----
+    @FR-004
+    Examples: Taxonomic families
+      | entity | fields                   |
+      | family | name and taxonomic order |
 
-### User Story 3 - Maintain the taxonomic families and ecosystems (Priority: P3)
+    @FR-005
+    Examples: Ecosystems
+      | entity    | fields                   |
+      | ecosystem | name and geographic zone |
 
-A maintainer manages the two reference vocabularies the birds are classified against: the
-taxonomic families (name and taxonomic order) and the ecosystems (name and geographic
-zone). They can consult the full list of each, consult one by identifier, and add, correct,
-or remove entries.
+  @FR-015
+  Scenario: Unknown identifier
+    Given an identifier matching no record
+    When a consumer requests it
+    Then the consumer is told the record does not exist
+    And that outcome is distinguishable from a malformed or invalid request
 
-**Why this priority**: The reference vocabularies are what make the classification
-consistent across birds — the standardization the brief asks for. They are needed before
-birds can be classified, but they carry no standalone value for the end consumer.
+  @FR-015
+  Scenario: Malformed identifier
+    Given a value that is not a valid identifier at all
+    When a consumer requests it
+    Then the consumer is told the request is invalid, not that the record is missing
 
-**Independent Test**: A maintainer can create, consult, list, modify, and remove a
-taxonomic family and an ecosystem without any bird record existing.
-
-**Acceptance Scenarios**:
-
-1. **Given** the catalog is running, **When** a maintainer registers a taxonomic family with its name and order, **Then** it is stored with its own identifier and becomes available for classifying birds.
-2. **Given** the catalog is running, **When** a maintainer registers an ecosystem with its name and geographic zone, **Then** it is stored with its own identifier and becomes available for classifying birds.
-3. **Given** a registered family or ecosystem, **When** a maintainer consults it by identifier or lists all of them, **Then** the stored values are returned.
-4. **Given** a registered family or ecosystem, **When** a maintainer corrects or removes it, **Then** the change is reflected in subsequent consultations.
-
----
-
-### User Story 4 - Compare birds across families and ecosystems (Priority: P4)
-
-A researcher wants to see which birds share a taxonomic family, or which birds inhabit a
-given ecosystem, in order to do the comparative analysis the brief describes — for example,
-listing every bird recorded in the páramo, or every member of the Cathartidae family.
-
-**Why this priority**: This is the comparative-analysis payoff of having the data
-centralized, but it is only meaningful once birds and both reference vocabularies are in
-place.
-
-**Independent Test**: With several birds sharing a family and several sharing an ecosystem,
-requesting the birds of a given family returns exactly that subset, and the same for a given
-ecosystem.
-
-**Acceptance Scenarios**:
-
-1. **Given** several birds are classified under the same taxonomic family, **When** a consumer requests the birds of that family, **Then** exactly those birds are returned and no others.
-2. **Given** several birds are recorded in the same ecosystem, **When** a consumer requests the birds of that ecosystem, **Then** exactly those birds are returned and no others.
-3. **Given** a family or ecosystem exists but has no birds associated with it, **When** a consumer requests its birds, **Then** an empty result is returned rather than an error.
-4. **Given** an identifier that matches no family or ecosystem, **When** a consumer requests its birds, **Then** the consumer is told it does not exist.
+  Scenario: Empty catalog
+    Given no birds have been registered
+    When a consumer requests the list of birds
+    Then an empty result is returned, not an error
+```
 
 ---
 
-### Edge Cases
+## Feature: Curate bird records
 
-- A consumer asks for a bird, family, or ecosystem by an identifier that does not exist, or by a value that is not a valid identifier at all — the two situations must remain distinguishable to the caller.
-- A bird is submitted referencing a taxonomic family or an ecosystem that has not been registered.
-- A maintainer removes a taxonomic family or an ecosystem that birds are still classified under — see FR-018.
-- A bird has no documented indigenous name or indigenous language (many species do not), or its ecosystem is not known at the time of registration — see FR-016.
-- The same bird is submitted twice, or two birds are submitted with the same scientific name — see FR-017.
-- A correction is submitted for a bird, family, or ecosystem that does not exist (or no longer does).
-- The catalog is queried before any data has been loaded.
-- Names carry Spanish and indigenous-language characters (e.g. "Cóndor de los Andes", "Páramo", "Kuntur"); they must be stored and returned unaltered.
+```gherkin
+@P2
+Feature: Curate bird records
+  As a catalog maintainer
+  I want to register, correct and remove birds
+  So that the catalog stays current instead of being a frozen dataset
 
-## Requirements *(mandatory)*
+  @FR-008
+  Scenario: Register a bird
+    Given a family and an ecosystem already exist
+    When a maintainer registers a bird referencing them
+    Then the bird is stored with its own identifier
+    And it is retrievable afterwards
 
-### Functional Requirements
+  @FR-009
+  Scenario: Correct a bird
+    Given a registered bird
+    When a maintainer changes one or more of its values
+    Then subsequent consultations return the updated values
+    And no other field is altered
 
-**Catalog consultation**
+  @FR-010
+  Scenario: Remove a bird
+    Given a registered bird
+    When a maintainer removes it
+    Then it no longer appears in the catalog
+    And its family and its ecosystem remain untouched
 
-- **FR-001**: The system MUST let a consumer retrieve the complete list of registered birds.
-- **FR-002**: The system MUST let a consumer retrieve a single bird by its identifier.
-- **FR-003**: A bird returned by the system MUST carry its scientific name, common name, indigenous name, indigenous language, its taxonomic family association, and its ecosystem association.
-- **FR-004**: The system MUST let a consumer retrieve the complete list of taxonomic families, and a single taxonomic family by its identifier, with its name and taxonomic order.
-- **FR-005**: The system MUST let a consumer retrieve the complete list of ecosystems, and a single ecosystem by its identifier, with its name and geographic zone.
-- **FR-006**: The system MUST let a consumer retrieve all birds classified under a given taxonomic family.
-- **FR-007**: The system MUST let a consumer retrieve all birds recorded in a given ecosystem.
+  @FR-014
+  Scenario: Reject a dangling classification
+    Given a family or ecosystem identifier that matches no registered entry
+    When a maintainer registers or corrects a bird referencing it
+    Then the operation is rejected and the reason is stated
 
-**Catalog curation**
+  @FR-015
+  Scenario: Curate a record that does not exist
+    Given an identifier matching no bird, family or ecosystem
+    When a maintainer submits a correction or a removal for it
+    Then the maintainer is told the record does not exist
+```
 
-- **FR-008**: The system MUST let a maintainer register a new bird with its descriptive names, its taxonomic family, and its ecosystem.
-- **FR-009**: The system MUST let a maintainer correct an existing bird record.
-- **FR-010**: The system MUST let a maintainer remove a bird from the catalog.
-- **FR-011**: The system MUST let a maintainer register, correct, and remove taxonomic families.
-- **FR-012**: The system MUST let a maintainer register, correct, and remove ecosystems.
+---
 
-**Integrity and consistency**
+## Feature: Maintain the reference vocabularies
 
-- **FR-013**: Every bird, taxonomic family, and ecosystem MUST be identified by a unique identifier that is assigned by the system, stable for the lifetime of the record, and not guessable or inferable from the order in which records were created.
-- **FR-014**: The system MUST reject a bird whose taxonomic family or ecosystem does not correspond to a registered entry, and state why.
-- **FR-015**: The system MUST distinguish, in its response, between a request for a record that does not exist and a request that is malformed or invalid.
-- **FR-016**: The system MUST enforce the following presence rules when registering or correcting a bird: [NEEDS CLARIFICATION: the brief lists the fields but not which are mandatory. Are indigenous name and indigenous language optional (many species have none, and the brief's own condor example carries no ecosystem)? Is the ecosystem association required at registration time, or may a bird be recorded before its ecosystem is known?]
-- **FR-017**: The system MUST apply the following uniqueness rules: [NEEDS CLARIFICATION: the brief states no uniqueness constraints. Must a scientific name be unique across birds — and must a family name and an ecosystem name be unique — or are duplicates permitted?]
-- **FR-018**: When a maintainer removes a taxonomic family or an ecosystem that birds are still classified under, the system MUST [NEEDS CLARIFICATION: the brief does not say. Refuse the removal while dependent birds exist, remove the dependent birds along with it, or keep the birds and leave that classification unassigned?]
-- **FR-019**: The system MUST preserve Spanish and indigenous-language text exactly as submitted, in storage and in every response.
+```gherkin
+@P3
+Feature: Maintain the reference vocabularies
+  As a catalog maintainer
+  I want to manage families and ecosystems
+  So that birds are classified consistently against a standard vocabulary
 
-**Demonstration dataset**
+  Scenario Outline: Lifecycle of a vocabulary entry
+    When a maintainer registers a <entity> with its <fields>
+    Then it is stored with its own identifier
+    And it becomes available for classifying birds
+    When the maintainer corrects it
+    Then subsequent consultations return the corrected values
+    When the maintainer removes it
+    Then it no longer appears in the list of that vocabulary
 
-- **FR-020**: The catalog MUST be demonstrable with at least 5 birds registered together with their taxonomic families and ecosystems, chosen so that at least one family and at least one ecosystem are shared by more than one bird, allowing FR-006 and FR-007 to be exercised meaningfully.
+    @FR-011
+    Examples: Taxonomic families
+      | entity | fields                   |
+      | family | name and taxonomic order |
 
-### Key Entities
+    @FR-012
+    Examples: Ecosystems
+      | entity    | fields                   |
+      | ecosystem | name and geographic zone |
 
-- **Bird (Ave)**: A bird species recorded in the catalog. Carries its scientific name, its common name, its indigenous name and the indigenous language that name belongs to. Each bird is classified under exactly one taxonomic family and associated with exactly one ecosystem.
-- **Taxonomic Family (Familia Taxonómica)**: A taxonomic grouping used to classify birds consistently. Carries a name (e.g. *Cathartidae*) and the taxonomic order it belongs to (e.g. *Cathartiformes*). One family may group many birds.
-- **Ecosystem (Ecosistema)**: A habitat in which birds are recorded. Carries a name (e.g. *Páramo*) and the geographic zone it belongs to (e.g. *Andina*). One ecosystem may host many birds.
+  @FR-018
+  Scenario Outline: Removing a vocabulary entry in use is refused
+    Given at least one bird is classified under a <entity>
+    When a maintainer removes that <entity>
+    Then the removal is refused and the reason is stated
+    And the <entity> is still registered
+    And no bird is deleted or left unclassified
 
-## Success Criteria *(mandatory)*
+    Examples:
+      | entity    |
+      | family    |
+      | ecosystem |
 
-### Measurable Outcomes
+  Scenario Outline: Removal succeeds once nothing depends on it
+    Given no bird is classified under a <entity>
+    When a maintainer removes that <entity>
+    Then it is removed
 
-- **SC-001**: A consumer can obtain a bird's complete classification — descriptive names, taxonomic family with its order, and ecosystem with its geographic zone — from this catalog alone, with no other source consulted.
-- **SC-002**: All 16 catalog operations described in the brief (5 for birds, 6 for families, 5 for ecosystems, including the two cross-entity listings) are available and exercised successfully in an end-to-end demonstration.
-- **SC-003**: A demonstration dataset of at least 5 birds, sharing at least one taxonomic family and at least one ecosystem between them, is registered end to end through the catalog itself, and every registered bird is afterwards retrievable both individually and in the full list.
-- **SC-004**: Listing the birds of a given family, and of a given ecosystem, returns exactly the expected subset of the demonstration dataset — 100% precision and 100% recall, verified against the seeded data.
-- **SC-005**: 100% of birds in the catalog resolve to an existing taxonomic family and an existing ecosystem — no record points at a classification that is not registered.
-- **SC-006**: Every failed request (unknown record, invalid input, integrity violation) returns a response from which the caller can determine what went wrong without inspecting logs or source code.
-- **SC-007**: Text in Spanish and in indigenous languages is returned byte-for-byte identical to what was submitted, verified on names containing accented and non-ASCII characters.
+    Examples:
+      | entity    |
+      | family    |
+      | ecosystem |
+```
+
+---
+
+## Feature: Compare birds across families and ecosystems
+
+```gherkin
+@P4
+Feature: Compare birds across families and ecosystems
+  As a researcher
+  I want the birds of a given family or ecosystem
+  So that I can do comparative analysis on centralized data
+
+  Scenario Outline: List the birds of a classification
+    Given several birds are classified under the same <entity>
+    And other birds are classified elsewhere
+    When a consumer requests the birds of that <entity>
+    Then exactly those birds are returned and no others
+
+    @FR-006
+    Examples: Taxonomic families
+      | entity |
+      | family |
+
+    @FR-007
+    Examples: Ecosystems
+      | entity    |
+      | ecosystem |
+
+  Scenario Outline: Classification with no birds
+    Given a <entity> exists with no birds associated
+    When a consumer requests its birds
+    Then an empty result is returned, not an error
+
+    Examples:
+      | entity    |
+      | family    |
+      | ecosystem |
+
+  @FR-015
+  Scenario Outline: Birds of a classification that does not exist
+    Given an identifier matching no <entity>
+    When a consumer requests its birds
+    Then the consumer is told the <entity> does not exist
+
+    Examples:
+      | entity    |
+      | family    |
+      | ecosystem |
+```
+
+---
+
+## Feature: Data integrity
+
+```gherkin
+Feature: Data integrity
+  Rules that hold across every operation above.
+
+  @FR-003
+  Scenario: Bird payload
+    When a bird is returned by any operation
+    Then it carries its scientific name, common name, indigenous name,
+        indigenous language, its family association and its ecosystem association
+
+  @FR-013
+  Scenario: Identifiers
+    When any bird, family or ecosystem is created
+    Then the system assigns a unique identifier
+    And that identifier is stable for the lifetime of the record
+    And it is not guessable or inferable from creation order
+
+  @FR-019
+  Scenario: Spanish and indigenous-language text
+    When a record containing "Cóndor de los Andes", "Páramo" or "Kuntur" is submitted
+    Then those values are stored and returned unaltered
+
+  @FR-016
+  Scenario Outline: Presence rules for bird fields
+    Given a bird submitted without its <field>
+    When a maintainer registers or corrects it
+    Then the submission is <outcome>
+
+    Examples: Mandatory
+      | field           | outcome                                |
+      | scientific name | rejected, and the reason is stated     |
+      | common name     | rejected, and the reason is stated     |
+      | family          | rejected, and the reason is stated     |
+      | ecosystem       | rejected, and the reason is stated     |
+
+    Examples: Optional
+      | field               | outcome                              |
+      | indigenous name     | accepted, and the field left empty   |
+      | indigenous language | accepted, and the field left empty   |
+
+  @FR-017
+  Scenario Outline: Names are unique within their own kind
+    Given a <entity> is registered with a given <field>
+    When a maintainer registers or corrects another <entity> carrying the same <field>
+    Then the operation is rejected and the reason is stated
+
+    Examples:
+      | entity    | field           |
+      | bird      | scientific name |
+      | family    | name            |
+      | ecosystem | name            |
+
+  Scenario: Sharing a classification is not a duplicate
+    Given a family and an ecosystem are registered
+    When several birds are registered referencing that same family and that same ecosystem
+    Then every one of them is accepted
+```
+
+---
+
+## Success Criteria
+
+- **SC-001**: A consumer obtains a bird's complete classification — names, family with its order, ecosystem with its zone — from this catalog alone.
+- **SC-002**: All 16 operations from the brief (5 birds, 6 families, 5 ecosystems, incl. the two cross-entity listings) are exercised successfully end to end.
+- **SC-003** (`@FR-020`): A demonstration dataset of ≥5 birds — with ≥1 family and ≥1 ecosystem shared by more than one bird, so `@P4` is meaningfully exercised — is registered through the catalog itself, and every bird is afterwards retrievable individually and in the list.
+- **SC-004**: The `@P4` listings return exactly the expected subset of that dataset — 100% precision and recall against the seeded data.
+- **SC-005**: 100% of birds resolve to an existing family and an existing ecosystem.
+- **SC-006**: Every failed request states what went wrong without the caller reading logs or source.
+- **SC-007**: Accented and non-ASCII text round-trips byte-for-byte.
 
 ## Assumptions
 
-- Scope is bounded to exactly the operations enumerated in the source brief. Free-text search, filtering by arbitrary field, sorting, pagination, bulk import, images, audio, geographic coordinates, and conservation status are **not** part of this feature — the brief mentions none of them.
-- The catalog is read by external consumers programmatically (the brief's stated purpose is programmatic access for enthusiasts, academics, and conservation professionals). No user interface is in scope.
-- A bird belongs to exactly one taxonomic family and one ecosystem, as the brief's data model expresses each as a single association. Multi-ecosystem or multi-family birds are out of scope.
-- Taxonomic families and ecosystems are shared reference data: several birds may point at the same family and the same ecosystem, and the brief explicitly asks for the demonstration data to be chosen so this is the case.
-- The brief specifies no users, roles, authentication, or authorization, and no distinction between who may read the catalog and who may modify it. This specification therefore describes the *maintainer* and *consumer* as roles in the workflow, not as enforced permissions; **access control is treated as out of scope for this feature** and must be added as a separate feature if the catalog is exposed publicly with write operations. Flagged here rather than assumed away — see Open Questions.
-- No volume, traffic, latency, or availability targets are stated in the brief, so none are asserted here; the success criteria measure correctness and completeness instead. If this catalog is to serve production traffic, performance targets need to be established separately.
-- The source brief also mandates specific implementation choices (identifier data type, architectural layering, the repository pattern, and the exact operation signatures). Those are deliberately excluded from this specification, which covers *what* and *why*; they belong to the planning phase and remain binding there.
+- Scope is exactly the operations in the brief. **Out of scope**: search, filtering, sorting, pagination, bulk import, images, audio, coordinates, conservation status, and any UI — the brief mentions none.
+- Consumers are programmatic; no user interface.
+- One bird → one family, one ecosystem (the brief's model). Families and ecosystems are shared reference data.
+- No volume, latency or availability targets are stated, so none are asserted; the criteria measure correctness instead. Production targets need to be set separately.
+- **Access control is out of scope.** The brief names no users, roles or permissions; "maintainer" and "consumer" above are workflow roles, not enforced ones. Required as a separate feature before exposing writes publicly.
 
 ## Open Questions
 
-Recorded here rather than resolved by guesswork. The first three are also marked inline in
-the requirements above.
-
-1. **Mandatory vs optional bird fields** (FR-016) — which of the descriptive fields must be present, and is the ecosystem association required at registration?
-2. **Uniqueness rules** (FR-017) — may two birds share a scientific name; may two families or two ecosystems share a name?
-3. **Removing reference data still in use** (FR-018) — refuse, cascade, or leave the birds unclassified?
-4. **Access control** — the brief names no roles or permissions; is the catalog read-only to the public with restricted curation, or fully open? (See Assumptions; currently out of scope.)
-5. **Correcting a record** — must a correction supply the complete record (replacing every field) or may it supply only the fields that change? The brief's operation inventory implies whole-record updates but does not state it.
+1. Access control — restricted curation or fully open? (Out of scope above.)
+2. Corrections — whole-record replacement or partial? The brief's operation inventory implies whole-record but does not say.
+3. Uniqueness comparison — is `@FR-017` exact-match, or should "Páramo" collide with "paramo"/"PÁRAMO"? Assumed **exact match** above; changing it is a one-line edit to that scenario.
