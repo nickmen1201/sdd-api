@@ -1,0 +1,1005 @@
+openapi: 3.1.0
+
+# ---------------------------------------------------------------------------
+# FROZEN CONTRACT — source of truth for the Birds of Colombia Catalog.
+#
+# Authored by hand BEFORE any implementation code, per the engineering
+# constitution (SWE profile: "Interfaces get a lintable contract written and
+# linted before code, and frozen. No endpoint exists in code that isn't in it").
+#
+# Swashbuckle's runtime document is NOT the source of truth. It is an
+# observation of the implementation, diffed against this file in CI; drift
+# fails the build. See research.md R-008.
+#
+# Paths reproduce the original brief verbatim, including its singular/plural
+# inconsistency (GET /api/ave/{ave_id} vs DELETE /api/aves/{ave_id}) and its
+# body-carried ids on PUT. This is deliberate — see research.md R-011.
+#
+# Operation count: 17 (5 birds, 6 families, 6 ecosystems).
+# Note that spec.md SC-002 says 16; that is an arithmetic slip in the spec's
+# prose, flagged in plan.md for upstream correction. The spec's Gherkin covers
+# all 17.
+# ---------------------------------------------------------------------------
+
+info:
+  title: Birds of Colombia Catalog
+  version: 1.0.0
+  summary: Centralised catalog of Colombian birds, their taxonomic families and their ecosystems.
+  description: |
+    A centralised, structured source of information about Colombian birds — their
+    taxonomic classification and their ecosystem — for enthusiasts, academics and
+    conservation professionals.
+
+    ## Identifiers
+
+    Every identifier is a server-assigned UUIDv4. Clients never supply one on create;
+    an `id` present in a create body is ignored. Version 4 is used rather than
+    version 7 because FR-013 requires identifiers that are not inferable from creation
+    order, and v7 embeds a creation timestamp.
+
+    ## Errors
+
+    Every failure response is RFC 7807 `application/problem+json`. A malformed
+    identifier yields `400` and is always distinguishable from an absent record,
+    which yields `404` (FR-015).
+
+    - `400` — the request is syntactically invalid (malformed UUID, missing mandatory field)
+    - `404` — the request is well-formed but names no existing record
+    - `409` — the request conflicts with catalog state (duplicate name; deleting an entry still in use)
+    - `422` — the request is well-formed and schema-valid but references a family or ecosystem that does not exist
+
+    ## Text encoding
+
+    All text is UTF-8 and round-trips byte-for-byte. Accented Spanish and
+    indigenous-language values such as `Cóndor de los Andes`, `Páramo` and `Kuntur`
+    are stored and returned unaltered (FR-019, SC-007).
+
+    ## Out of scope
+
+    This version has no authentication, search, filtering, sorting or pagination.
+    List operations return the complete collection.
+  contact:
+    name: Birds of Colombia Catalog
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: Local Docker Compose environment
+
+tags:
+  - name: Aves
+    description: Bird records. The catalog's primary entity.
+  - name: Familias
+    description: Taxonomic families. Shared reference vocabulary.
+  - name: Ecosistemas
+    description: Ecosystems. Shared reference vocabulary.
+
+paths:
+  # =========================================================================
+  # AVES — 5 operations
+  # =========================================================================
+
+  /api/aves:
+    get:
+      tags: [Aves]
+      operationId: listarAves
+      summary: List every registered bird
+      description: |
+        Returns every registered bird with its full payload, including its family and
+        ecosystem resolved in full (FR-001, FR-003).
+
+        An empty catalog returns an empty array with `200`, never an error.
+      responses:
+        '200':
+          description: The complete list of birds. May be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ave'
+              examples:
+                poblado:
+                  summary: A populated catalog
+                  value:
+                    - id: 3f1c9a2e-5b7d-4e88-9c31-6a0f4d2b8e71
+                      nombre_cientifico: Vultur gryphus
+                      nombre_comun: Cóndor de los Andes
+                      nombre_indigena: Kuntur
+                      lengua_indigena: Quechua
+                      familia:
+                        id: 9b2e4c17-8a3f-4d60-b512-7c9e1a4f36d8
+                        nombre: Cathartidae
+                        orden: Cathartiformes
+                      ecosistema:
+                        id: c4a71e93-2d58-4f0b-8e16-5b3d9c27a04f
+                        nombre: Páramo
+                        zona_geografica: Andina
+                vacio:
+                  summary: An empty catalog
+                  value: []
+
+    post:
+      tags: [Aves]
+      operationId: crearAve
+      summary: Register a bird
+      description: |
+        Registers a bird against an existing family and ecosystem (FR-008). The
+        identifier is assigned by the server (FR-013).
+
+        `nombre_cientifico` must not already be in use (FR-017). `familia_id` and
+        `ecosistema_id` must each resolve to a registered entry (FR-014); many birds
+        may share the same family and ecosystem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AveNueva'
+      responses:
+        '201':
+          description: The bird was registered.
+          headers:
+            Location:
+              description: URL of the newly registered bird.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ave'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+        '422':
+          $ref: '#/components/responses/ReferenciaInexistente'
+
+  /api/ave:
+    put:
+      tags: [Aves]
+      operationId: actualizarAve
+      summary: Correct a bird
+      description: |
+        Whole-record replacement (FR-009). The identifier travels in the body because the
+        brief's `PUT /api/ave` carries no path parameter, and the path is singular for the
+        same reason — the brief's inventory is reproduced verbatim (research.md R-011).
+
+        Because this is a replacement rather than a patch, omitting an optional field
+        clears it. Every mandatory field must be present on every call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AveActualizada'
+      responses:
+        '200':
+          description: The bird was updated. Returns the corrected record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ave'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+        '422':
+          $ref: '#/components/responses/ReferenciaInexistente'
+
+  /api/ave/{ave_id}:
+    parameters:
+      - $ref: '#/components/parameters/AveId'
+    get:
+      tags: [Aves]
+      operationId: obtenerAve
+      summary: Retrieve one bird
+      description: |
+        Returns the complete record, with family and ecosystem resolved in full so that
+        a consumer obtains the whole classification from a single request (FR-002,
+        FR-003, SC-001).
+      responses:
+        '200':
+          description: The bird record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ave'
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/aves/{ave_id}:
+    parameters:
+      - $ref: '#/components/parameters/AveId'
+    delete:
+      tags: [Aves]
+      operationId: eliminarAve
+      summary: Remove a bird
+      description: |
+        Removes the bird (FR-010). Its family and its ecosystem are left untouched —
+        deleting a bird never affects the reference vocabularies.
+      responses:
+        '204':
+          description: The bird was removed.
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  # =========================================================================
+  # FAMILIAS — 6 operations
+  # =========================================================================
+
+  /api/familias:
+    get:
+      tags: [Familias]
+      operationId: listarFamilias
+      summary: List every taxonomic family
+      description: Returns every registered family with its name and taxonomic order (FR-004).
+      responses:
+        '200':
+          description: The complete list of families. May be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Familia'
+
+    post:
+      tags: [Familias]
+      operationId: crearFamilia
+      summary: Register a taxonomic family
+      description: |
+        Registers a family and makes it available for classifying birds (FR-011). The
+        identifier is assigned by the server. `nombre` must not already be in use (FR-017).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FamiliaNueva'
+      responses:
+        '201':
+          description: The family was registered.
+          headers:
+            Location:
+              description: URL of the newly registered family.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Familia'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+
+    put:
+      tags: [Familias]
+      operationId: actualizarFamilia
+      summary: Correct a taxonomic family
+      description: |
+        Whole-record replacement (FR-011). The identifier travels in the body, matching
+        the brief's `PUT /api/familias` signature.
+
+        Birds classified under this family keep their association; only the family's own
+        values change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FamiliaActualizada'
+      responses:
+        '200':
+          description: The family was updated. Returns the corrected record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Familia'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+
+  /api/familias/{familia_id}:
+    parameters:
+      - $ref: '#/components/parameters/FamiliaId'
+    get:
+      tags: [Familias]
+      operationId: obtenerFamilia
+      summary: Retrieve one taxonomic family
+      description: Returns the family's stored name and taxonomic order (FR-004).
+      responses:
+        '200':
+          description: The family record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Familia'
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+    delete:
+      tags: [Familias]
+      operationId: eliminarFamilia
+      summary: Remove a taxonomic family
+      description: |
+        Removes the family, but only if no bird is classified under it.
+
+        While any bird still references it the removal is **refused** with `409` and the
+        family remains registered; no bird is deleted or left unclassified (FR-018).
+        Once nothing depends on it, removal succeeds.
+      responses:
+        '204':
+          description: The family was removed.
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/EnUso'
+
+  /api/familias/{familia_id}/aves:
+    parameters:
+      - $ref: '#/components/parameters/FamiliaId'
+    get:
+      tags: [Familias]
+      operationId: listarAvesPorFamilia
+      summary: List the birds of a taxonomic family
+      description: |
+        Returns exactly the birds classified under this family and no others (FR-006).
+
+        A family with no birds returns an empty array with `200`, not an error. A family
+        that does not exist returns `404`.
+      responses:
+        '200':
+          description: The birds of this family. May be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ave'
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  # =========================================================================
+  # ECOSISTEMAS — 6 operations
+  # =========================================================================
+
+  /api/ecosistemas:
+    get:
+      tags: [Ecosistemas]
+      operationId: listarEcosistemas
+      summary: List every ecosystem
+      description: Returns every registered ecosystem with its name and geographic zone (FR-005).
+      responses:
+        '200':
+          description: The complete list of ecosystems. May be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ecosistema'
+
+    post:
+      tags: [Ecosistemas]
+      operationId: crearEcosistema
+      summary: Register an ecosystem
+      description: |
+        Registers an ecosystem and makes it available for classifying birds (FR-012). The
+        identifier is assigned by the server. `nombre` must not already be in use (FR-017).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EcosistemaNuevo'
+      responses:
+        '201':
+          description: The ecosystem was registered.
+          headers:
+            Location:
+              description: URL of the newly registered ecosystem.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ecosistema'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+
+    put:
+      tags: [Ecosistemas]
+      operationId: actualizarEcosistema
+      summary: Correct an ecosystem
+      description: |
+        Whole-record replacement (FR-012). The identifier travels in the body, matching
+        the brief's `PUT /api/ecosistemas` signature.
+
+        Birds hosted by this ecosystem keep their association; only the ecosystem's own
+        values change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EcosistemaActualizado'
+      responses:
+        '200':
+          description: The ecosystem was updated. Returns the corrected record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ecosistema'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/NombreDuplicado'
+
+  /api/ecosistemas/{ecosistema_id}:
+    parameters:
+      - $ref: '#/components/parameters/EcosistemaId'
+    get:
+      tags: [Ecosistemas]
+      operationId: obtenerEcosistema
+      summary: Retrieve one ecosystem
+      description: Returns the ecosystem's stored name and geographic zone (FR-005).
+      responses:
+        '200':
+          description: The ecosystem record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ecosistema'
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+    delete:
+      tags: [Ecosistemas]
+      operationId: eliminarEcosistema
+      summary: Remove an ecosystem
+      description: |
+        Removes the ecosystem, but only if no bird is classified under it.
+
+        While any bird still references it the removal is **refused** with `409` and the
+        ecosystem remains registered; no bird is deleted or left unclassified (FR-018).
+        Once nothing depends on it, removal succeeds.
+      responses:
+        '204':
+          description: The ecosystem was removed.
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/EnUso'
+
+  /api/ecosistemas/{ecosistema_id}/aves:
+    parameters:
+      - $ref: '#/components/parameters/EcosistemaId'
+    get:
+      tags: [Ecosistemas]
+      operationId: listarAvesPorEcosistema
+      summary: List the birds of an ecosystem
+      description: |
+        Returns exactly the birds hosted by this ecosystem and no others (FR-007).
+
+        An ecosystem with no birds returns an empty array with `200`, not an error. An
+        ecosystem that does not exist returns `404`.
+      responses:
+        '200':
+          description: The birds of this ecosystem. May be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ave'
+        '400':
+          $ref: '#/components/responses/IdentificadorMalformado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+components:
+
+  # -------------------------------------------------------------------------
+  # Parameters
+  #
+  # Declared as `format: uuid` because that is what the API accepts. A value
+  # that is not a UUID yields 400, never 404 (FR-015) — which means the
+  # implementation must NOT use the ASP.NET `{id:guid}` route constraint, since
+  # that fails route matching and produces 404. See research.md R-004.
+  # -------------------------------------------------------------------------
+  parameters:
+    AveId:
+      name: ave_id
+      in: path
+      required: true
+      description: Identifier of the bird.
+      schema:
+        type: string
+        format: uuid
+      example: 3f1c9a2e-5b7d-4e88-9c31-6a0f4d2b8e71
+
+    FamiliaId:
+      name: familia_id
+      in: path
+      required: true
+      description: Identifier of the taxonomic family.
+      schema:
+        type: string
+        format: uuid
+      example: 9b2e4c17-8a3f-4d60-b512-7c9e1a4f36d8
+
+    EcosistemaId:
+      name: ecosistema_id
+      in: path
+      required: true
+      description: Identifier of the ecosystem.
+      schema:
+        type: string
+        format: uuid
+      example: c4a71e93-2d58-4f0b-8e16-5b3d9c27a04f
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+
+    Identificador:
+      type: string
+      format: uuid
+      readOnly: true
+      description: |
+        Server-assigned UUIDv4. Unique, stable for the lifetime of the record, and not
+        inferable from creation order (FR-013). Clients never supply this on create.
+
+    # ---- Familia ----------------------------------------------------------
+
+    Familia:
+      type: object
+      title: Familia
+      description: A taxonomic family. Shared reference data — many birds may belong to one family.
+      required: [id, nombre, orden]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/Identificador'
+        nombre:
+          type: string
+          minLength: 1
+          description: Family name. Unique across families (FR-017).
+          examples: [Cathartidae]
+        orden:
+          type: string
+          minLength: 1
+          description: Taxonomic order.
+          examples: [Cathartiformes]
+      examples:
+        - id: 9b2e4c17-8a3f-4d60-b512-7c9e1a4f36d8
+          nombre: Cathartidae
+          orden: Cathartiformes
+
+    FamiliaNueva:
+      type: object
+      title: FamiliaNueva
+      description: Payload for registering a family. The identifier is assigned by the server.
+      required: [nombre, orden]
+      additionalProperties: false
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          examples: [Cathartidae]
+        orden:
+          type: string
+          minLength: 1
+          examples: [Cathartiformes]
+
+    FamiliaActualizada:
+      type: object
+      title: FamiliaActualizada
+      description: |
+        Payload for correcting a family. Whole-record replacement: every field must be
+        present. The identifier travels in the body because the brief's `PUT /api/familias`
+        has no path parameter.
+      required: [id, nombre, orden]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the family to correct.
+        nombre:
+          type: string
+          minLength: 1
+        orden:
+          type: string
+          minLength: 1
+
+    # ---- Ecosistema -------------------------------------------------------
+
+    Ecosistema:
+      type: object
+      title: Ecosistema
+      description: An ecosystem. Shared reference data — many birds may inhabit one ecosystem.
+      required: [id, nombre, zona_geografica]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/Identificador'
+        nombre:
+          type: string
+          minLength: 1
+          description: Ecosystem name. Unique across ecosystems (FR-017).
+          examples: [Páramo]
+        zona_geografica:
+          type: string
+          minLength: 1
+          description: Geographic zone.
+          examples: [Andina]
+      examples:
+        - id: c4a71e93-2d58-4f0b-8e16-5b3d9c27a04f
+          nombre: Páramo
+          zona_geografica: Andina
+
+    EcosistemaNuevo:
+      type: object
+      title: EcosistemaNuevo
+      description: Payload for registering an ecosystem. The identifier is assigned by the server.
+      required: [nombre, zona_geografica]
+      additionalProperties: false
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          examples: [Páramo]
+        zona_geografica:
+          type: string
+          minLength: 1
+          examples: [Andina]
+
+    EcosistemaActualizado:
+      type: object
+      title: EcosistemaActualizado
+      description: |
+        Payload for correcting an ecosystem. Whole-record replacement: every field must be
+        present. The identifier travels in the body because the brief's
+        `PUT /api/ecosistemas` has no path parameter.
+      required: [id, nombre, zona_geografica]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the ecosystem to correct.
+        nombre:
+          type: string
+          minLength: 1
+        zona_geografica:
+          type: string
+          minLength: 1
+
+    # ---- Ave --------------------------------------------------------------
+
+    Ave:
+      type: object
+      title: Ave
+      description: |
+        A bird record as returned by any read operation (FR-003).
+
+        `familia` and `ecosistema` are embedded in full rather than as bare identifiers,
+        so that a consumer obtains the complete classification — family with its order,
+        ecosystem with its zone — from this single response (SC-001). Write operations
+        take `familia_id` and `ecosistema_id` scalars instead.
+      required:
+        - id
+        - nombre_cientifico
+        - nombre_comun
+        - nombre_indigena
+        - lengua_indigena
+        - familia
+        - ecosistema
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/Identificador'
+        nombre_cientifico:
+          type: string
+          minLength: 1
+          description: Scientific name. Unique across birds (FR-017).
+          examples: [Vultur gryphus]
+        nombre_comun:
+          type: string
+          minLength: 1
+          description: Common name.
+          examples: [Cóndor de los Andes]
+        nombre_indigena:
+          type: [string, 'null']
+          description: |
+            Indigenous name. Optional (FR-016) — `null` when the record carries none.
+            Present as a key on every response even when null, so that consumers need not
+            distinguish absent from empty.
+          examples: [Kuntur]
+        lengua_indigena:
+          type: [string, 'null']
+          description: Indigenous language. Optional (FR-016) — `null` when the record carries none.
+          examples: [Quechua]
+        familia:
+          $ref: '#/components/schemas/Familia'
+        ecosistema:
+          $ref: '#/components/schemas/Ecosistema'
+      examples:
+        - id: 3f1c9a2e-5b7d-4e88-9c31-6a0f4d2b8e71
+          nombre_cientifico: Vultur gryphus
+          nombre_comun: Cóndor de los Andes
+          nombre_indigena: Kuntur
+          lengua_indigena: Quechua
+          familia:
+            id: 9b2e4c17-8a3f-4d60-b512-7c9e1a4f36d8
+            nombre: Cathartidae
+            orden: Cathartiformes
+          ecosistema:
+            id: c4a71e93-2d58-4f0b-8e16-5b3d9c27a04f
+            nombre: Páramo
+            zona_geografica: Andina
+
+    AveNueva:
+      type: object
+      title: AveNueva
+      description: |
+        Payload for registering a bird. The identifier is assigned by the server.
+
+        `familia_id` and `ecosistema_id` are mandatory and must each resolve to a
+        registered entry (FR-014, FR-016). `nombre_indigena` and `lengua_indigena` may be
+        omitted or sent as `null` (FR-016).
+      required:
+        - nombre_cientifico
+        - nombre_comun
+        - familia_id
+        - ecosistema_id
+      additionalProperties: false
+      properties:
+        nombre_cientifico:
+          type: string
+          minLength: 1
+          examples: [Vultur gryphus]
+        nombre_comun:
+          type: string
+          minLength: 1
+          examples: [Cóndor de los Andes]
+        nombre_indigena:
+          type: [string, 'null']
+          default: null
+          examples: [Kuntur]
+        lengua_indigena:
+          type: [string, 'null']
+          default: null
+          examples: [Quechua]
+        familia_id:
+          type: string
+          format: uuid
+          description: Identifier of an existing taxonomic family.
+        ecosistema_id:
+          type: string
+          format: uuid
+          description: Identifier of an existing ecosystem.
+
+    AveActualizada:
+      type: object
+      title: AveActualizada
+      description: |
+        Payload for correcting a bird. Whole-record replacement: every mandatory field
+        must be present, and an omitted optional field is cleared. The identifier travels
+        in the body because the brief's `PUT /api/ave` has no path parameter.
+      required:
+        - id
+        - nombre_cientifico
+        - nombre_comun
+        - familia_id
+        - ecosistema_id
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the bird to correct.
+        nombre_cientifico:
+          type: string
+          minLength: 1
+        nombre_comun:
+          type: string
+          minLength: 1
+        nombre_indigena:
+          type: [string, 'null']
+          default: null
+        lengua_indigena:
+          type: [string, 'null']
+          default: null
+        familia_id:
+          type: string
+          format: uuid
+        ecosistema_id:
+          type: string
+          format: uuid
+
+    # ---- Errors -----------------------------------------------------------
+
+    ProblemDetails:
+      type: object
+      title: ProblemDetails
+      description: RFC 7807 problem detail. Every failure response uses this shape.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Stable URI identifying the problem type.
+          examples: ['https://catalog.birds/problems/nombre-duplicado']
+        title:
+          type: string
+          description: Short, human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          minimum: 400
+          maximum: 599
+          description: The HTTP status code.
+        detail:
+          type: string
+          description: |
+            Human-readable explanation specific to this occurrence, naming the offending
+            field or value. This is what satisfies SC-006 — the caller learns what went
+            wrong without reading logs or source.
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference identifying the specific occurrence.
+      additionalProperties: true
+
+    ValidationProblemDetails:
+      title: ValidationProblemDetails
+      description: |
+        RFC 7807 problem detail carrying per-field validation failures, returned when a
+        request body fails schema validation (FR-016).
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              description: Field name to the list of failures for that field.
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+
+  # -------------------------------------------------------------------------
+  # Reusable responses
+  #
+  # Every operation above enumerates its complete set of outcomes, errors
+  # included — required both by the constitution and by Schemathesis's
+  # status_code_conformance check.
+  # -------------------------------------------------------------------------
+  responses:
+
+    IdentificadorMalformado:
+      description: |
+        The supplied identifier is not a well-formed UUID. Distinct from `404`, which
+        means the identifier was well-formed but matched no record (FR-015).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://catalog.birds/problems/identificador-malformado
+            title: Malformed identifier
+            status: 400
+            detail: "'not-a-uuid' is not a valid identifier."
+
+    SolicitudInvalida:
+      description: |
+        The request body is invalid — a mandatory field is missing, or a value fails
+        validation (FR-016).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetails'
+          example:
+            type: https://catalog.birds/problems/solicitud-invalida
+            title: One or more validation errors occurred.
+            status: 400
+            errors:
+              nombre_cientifico: ['The nombre_cientifico field is required.']
+              ecosistema_id: ['The ecosistema_id field is required.']
+
+    NoEncontrado:
+      description: |
+        No record exists with that identifier. The identifier itself was well-formed —
+        a malformed one yields `400` instead (FR-015).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://catalog.birds/problems/no-encontrado
+            title: Record not found
+            status: 404
+            detail: 'No bird exists with identifier 3f1c9a2e-5b7d-4e88-9c31-6a0f4d2b8e71.'
+
+    NombreDuplicado:
+      description: |
+        Another record of the same kind already carries this name (FR-017). Scientific
+        names are unique across birds, family names across families, ecosystem names
+        across ecosystems.
+
+        Note that sharing a *classification* is not a duplicate — many birds may reference
+        the same family and the same ecosystem.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://catalog.birds/problems/nombre-duplicado
+            title: Duplicate name
+            status: 409
+            detail: "A bird with scientific name 'Vultur gryphus' is already registered."
+
+    EnUso:
+      description: |
+        The family or ecosystem cannot be removed because at least one bird is still
+        classified under it. The removal is refused, the entry remains registered, and no
+        bird is deleted or left unclassified (FR-018).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://catalog.birds/problems/en-uso
+            title: Entry still in use
+            status: 409
+            detail: "Family 'Cathartidae' cannot be removed: 3 birds are classified under it."
+
+    ReferenciaInexistente:
+      description: |
+        The request is well-formed and schema-valid, but `familia_id` or `ecosistema_id`
+        references an entry that is not registered (FR-014). Distinct from `400`, which
+        means the request itself was malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://catalog.birds/problems/referencia-inexistente
+            title: Referenced entry does not exist
+            status: 422
+            detail: 'No family exists with identifier 9b2e4c17-8a3f-4d60-b512-7c9e1a4f36d8.'
